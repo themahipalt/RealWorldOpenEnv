@@ -1,0 +1,105 @@
+name: customer-support-triage
+version: "1.0.0"
+description: >
+  A real-world customer support ticket triage environment.
+  Agents must classify ticket urgency, route to the correct department,
+  detect customer sentiment, decide on escalation, and draft responses.
+  Modelled after the daily workflows of Tier-1 and Tier-2 support teams.
+
+tags:
+  - openenv
+  - customer-support
+  - classification
+  - routing
+  - nlp
+  - real-world
+
+entry_point: customer_support_env:CustomerSupportEnv
+
+tasks:
+  - id: task1
+    name: Priority Classification
+    difficulty: easy
+    description: >
+      Given a support ticket, classify its urgency as one of:
+      urgent / high / medium / low.
+    max_steps: 3
+    reward_threshold: 0.8
+    grader: customer_support_env.graders:grade_task1
+
+  - id: task2
+    name: Ticket Routing
+    difficulty: medium
+    description: >
+      Classify priority AND route to the correct department:
+      billing / technical / account / returns / general.
+    max_steps: 4
+    reward_threshold: 0.7
+    grader: customer_support_env.graders:grade_task2
+
+  - id: task3
+    name: Full Triage
+    difficulty: hard
+    description: >
+      Complete triage: priority, department routing, sentiment detection,
+      escalation decision, and a draft customer reply.
+    max_steps: 5
+    reward_threshold: 0.6
+    grader: customer_support_env.graders:grade_task3
+
+observation_space:
+  type: object
+  description: customer_support_env.models:Observation
+  fields:
+    ticket:
+      type: object
+      description: The support ticket to triage
+    task_id:
+      type: string
+    task_description:
+      type: string
+      description: Full instructions for the agent
+    step:
+      type: integer
+      description: Current step number (0-indexed)
+    max_steps:
+      type: integer
+    extra_context:
+      type: object
+      description: Context revealed by lookup_history / request_info actions
+    action_history:
+      type: array
+      description: Log of previous actions and their scores
+
+action_space:
+  type: object
+  description: customer_support_env.models:Action
+  fields:
+    action_type:
+      type: string
+      enum: [submit_triage, lookup_history, request_info]
+      required: true
+    priority:
+      type: string
+      enum: [urgent, high, medium, low]
+    department:
+      type: string
+      enum: [billing, technical, account, returns, general]
+    sentiment:
+      type: string
+      enum: [angry, frustrated, neutral, satisfied]
+    escalate:
+      type: boolean
+    response_draft:
+      type: string
+    info_request:
+      type: string
+
+reward:
+  range: [0.0, 1.0]
+  trajectory_signal: true
+  description: >
+    Intermediate rewards (+/-0.05) are given for lookup_history and
+    request_info actions based on relevance. Terminal reward comes from
+    the task grader and reflects weighted accuracy across required fields.
+    Missed urgent escalations receive zero partial credit.
