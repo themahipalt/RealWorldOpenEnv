@@ -12,7 +12,7 @@ import random
 from copy import deepcopy
 from typing import Any, Dict, Tuple
 
-from .graders import GRADERS, step_reward
+from .graders import GRADERS, step_reward, _safe_score
 from .models import Action, Observation, Reward, Ticket
 from .tasks import TASK_CONFIGS
 from .tickets import TICKET_POOL
@@ -108,6 +108,9 @@ class CustomerSupportEnv:
                 ),
                 is_terminal=True,
             )
+
+        # Ensure score is strictly within (0, 1) — never exactly 0.0 or 1.0
+        reward = reward.model_copy(update={"score": _safe_score(reward.score)})
 
         self._cumulative_score += reward.score
         self._action_history.append(

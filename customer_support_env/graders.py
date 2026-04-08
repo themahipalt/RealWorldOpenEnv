@@ -90,7 +90,7 @@ def grade_task1(action: Action, ground_truth: Dict[str, Any]) -> Tuple[float, Di
     Weights: priority 100%
     """
     if action.priority is None:
-        return 0.0, {"priority": 0.0}, "No priority submitted."
+        return _safe_score(0.0), {"priority": _safe_score(0.0)}, "No priority submitted."
 
     p_score = _priority_score(action.priority, ground_truth["priority"])
 
