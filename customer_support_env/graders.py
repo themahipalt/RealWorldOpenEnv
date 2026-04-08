@@ -15,6 +15,13 @@ from .models import Action
 # Priority adjacency — one level off earns partial credit
 _PRIORITY_ORDER = ["urgent", "high", "medium", "low"]
 
+# OpenEnv requires scores strictly within (0, 1) — never exactly 0 or 1
+_EPSILON = 0.01
+
+def _safe_score(score: float) -> float:
+    """Clamp score to (_EPSILON, 1 - _EPSILON) to satisfy OpenEnv strict bounds."""
+    return round(max(_EPSILON, min(1.0 - _EPSILON, score)), 3)
+
 
 def _priority_score(predicted: str, expected: str) -> float:
     if predicted == expected:
@@ -97,7 +104,7 @@ def grade_task1(action: Action, ground_truth: Dict[str, Any]) -> Tuple[float, Di
     else:
         feedback_parts.append("Incorrect priority.")
 
-    return round(score, 3), breakdown, " ".join(feedback_parts)
+    return _safe_score(score), breakdown, " ".join(feedback_parts)
 
 
 def grade_task2(action: Action, ground_truth: Dict[str, Any]) -> Tuple[float, Dict, str]:
@@ -122,7 +129,7 @@ def grade_task2(action: Action, ground_truth: Dict[str, Any]) -> Tuple[float, Di
     )
 
     score = breakdown["priority"] + breakdown["department"]
-    return round(score, 3), breakdown, " | ".join(feedback_parts)
+    return _safe_score(score), breakdown, " | ".join(feedback_parts)
 
 
 def grade_task3(action: Action, ground_truth: Dict[str, Any]) -> Tuple[float, Dict, str]:
@@ -164,7 +171,7 @@ def grade_task3(action: Action, ground_truth: Dict[str, Any]) -> Tuple[float, Di
     feedback_parts.append(f"Response({r_score:.2f})")
 
     score = sum(breakdown.values())
-    return round(score, 3), breakdown, " | ".join(feedback_parts)
+    return _safe_score(score), breakdown, " | ".join(feedback_parts)
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
