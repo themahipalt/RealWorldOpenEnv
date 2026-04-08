@@ -18,7 +18,7 @@ import threading
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Body
 from pydantic import BaseModel
 
 from customer_support_env import CustomerSupportEnv
@@ -58,11 +58,18 @@ def health():
 
 
 @app.post("/reset")
-def reset(req: ResetRequest):
+def reset(req: Optional[ResetRequest] = Body(default=None)):
+    if req is None:
+        req = ResetRequest()
     env = CustomerSupportEnv(task_id=req.task_id, seed=req.seed)
     _envs[req.task_id] = env
     obs = env.reset()
-    return obs.model_dump()
+    return {
+        "observation": obs.model_dump(),
+        "reward": 0,
+        "done": False,
+        "info": {},
+    }
 
 
 @app.post("/step")
