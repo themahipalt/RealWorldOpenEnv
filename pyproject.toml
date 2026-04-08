@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "customer-support-triage"
+version = "1.0.0"
+description = "OpenEnv-compliant customer support ticket triage environment"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "openai>=2.7.2",
+    "pyyaml>=6.0",
+    "fastapi>=0.100,<1.0",
+    "uvicorn>=0.20,<1.0",
+    "openenv-core>=0.2.0",
+]
+
+[project.scripts]
+server = "server.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["customer_support_env*", "server*"]
