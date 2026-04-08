@@ -1,3 +1,17 @@
+---
+title: Customer Support Triage
+emoji: 🎫
+colorFrom: blue
+colorTo: green
+sdk: docker
+tags:
+  - openenv
+  - reinforcement-learning
+  - customer-support
+  - agent-benchmark
+pinned: false
+---
+
 # Customer Support Triage — OpenEnv Environment
 
 A real-world agent benchmark where models must triage customer support tickets:
