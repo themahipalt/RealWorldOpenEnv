@@ -54,18 +54,24 @@ def health():
     return {"status": "ok", "environment": "customer-support-triage", "version": "1.0.0"}
 
 
+from fastapi import Body
+from typing import Optional
+
 @app.post("/reset")
 def reset(req: Optional[ResetRequest] = Body(default=None)):
     if req is None:
         req = ResetRequest()
+
     env = CustomerSupportEnv(task_id=req.task_id, seed=req.seed)
     _envs[req.task_id] = env
+
     obs = env.reset()
+
     return {
         "observation": obs.model_dump(),
         "reward": 0,
         "done": False,
-        "info": {},
+        "info": {}
     }
 
 
