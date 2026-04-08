@@ -33,13 +33,14 @@ experienced Tier-1 support analyst.
 
 | Field | Type | Values |
 |-------|------|--------|
-| `action_type` | string (required) | `submit_triage`, `lookup_history`, `request_info` |
+| `action_type` | string (required) | `submit_triage`, `route_department`, `draft_response`, `lookup_history`, `request_info` |
 | `priority` | string | `urgent`, `high`, `medium`, `low` |
 | `department` | string | `billing`, `technical`, `account`, `returns`, `general` |
 | `sentiment` | string | `angry`, `frustrated`, `neutral`, `satisfied` |
 | `escalate` | bool | `true` / `false` |
 | `response_draft` | string | Free-form reply draft |
 | `info_request` | string | What additional info is needed |
+| `reasoning` | string | Optional chain-of-thought reasoning |
 
 **Non-terminal actions** (`lookup_history`, `request_info`) reveal additional
 context at a small reward cost and must be used before `submit_triage`.
@@ -82,7 +83,50 @@ relevant to the ticket's content, providing trajectory-level signal.
 
 ---
 
-## Setup
+## Live API
+
+The environment is deployed on Hugging Face Spaces:
+
+```
+https://mahithakur-customer-support-triage.hf.space
+```
+
+Interactive docs: `https://mahithakur-customer-support-triage.hf.space/docs`
+
+### HTTP API usage
+
+**Reset (start episode):**
+```bash
+curl -X POST https://mahithakur-customer-support-triage.hf.space/reset \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "task1", "seed": 42}'
+```
+
+**Step (submit action):**
+```bash
+# Task 1 — Priority Classification
+curl -X POST https://mahithakur-customer-support-triage.hf.space/step \
+  -H "Content-Type: application/json" \
+  -d '{"action_type": "submit_triage", "priority": "urgent"}'
+
+# Task 2 — Department Routing
+curl -X POST https://mahithakur-customer-support-triage.hf.space/step \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "task2", "action_type": "submit_triage", "priority": "high", "department": "billing"}'
+
+# Task 3 — Full Triage
+curl -X POST https://mahithakur-customer-support-triage.hf.space/step \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "task3", "action_type": "submit_triage", "priority": "urgent", "department": "billing", "sentiment": "angry", "escalate": true, "response_draft": "We have flagged the unauthorized transactions and escalated your case to our fraud team."}'
+```
+
+**Other endpoints:**
+- `GET /tasks` — list all tasks and their configs
+- `GET /state?task_id=task1` — current episode state
+
+---
+
+## Local Setup
 
 ```bash
 pip install -r requirements.txt
