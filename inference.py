@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
-import time
 from typing import Any, List, Optional
 
 from openai import OpenAI
@@ -27,7 +27,7 @@ from customer_support_env.models import Action
 # ── Environment variables ─────────────────────────────────────────────────────
 HF_TOKEN = os.getenv("HF_TOKEN")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 BENCHMARK = "customer-support-triage"
@@ -58,122 +58,87 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
     )
 
 
-# ── Tool schemas ──────────────────────────────────────────────────────────────
+# ── Prompt builders ───────────────────────────────────────────────────────────
 
-SUBMIT_TRIAGE_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "submit_triage",
-        "description": "Submit the final triage decision for the support ticket.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "priority": {
-                    "type": "string",
-                    "enum": ["urgent", "high", "medium", "low"],
-                    "description": "Urgency level of the ticket.",
-                },
-                "department": {
-                    "type": "string",
-                    "enum": ["billing", "technical", "account", "returns", "general"],
-                    "description": "Department to route the ticket to.",
-                },
-                "sentiment": {
-                    "type": "string",
-                    "enum": ["angry", "frustrated", "neutral", "satisfied"],
-                    "description": "Detected customer sentiment.",
-                },
-                "escalate": {
-                    "type": "boolean",
-                    "description": "Whether the ticket requires manager escalation.",
-                },
-                "response_draft": {
-                    "type": "string",
-                    "description": "Draft reply to send to the customer.",
-                },
-                "reasoning": {
-                    "type": "string",
-                    "description": "Brief reasoning for your decisions.",
-                },
-            },
-            "required": ["priority"],
-        },
-    },
-}
-
-LOOKUP_HISTORY_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "lookup_history",
-        "description": "Retrieve the customer's prior contact history.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
-}
-
-REQUEST_INFO_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "request_info",
-        "description": "Request additional context about the ticket (account status, order details, etc.).",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "info_request": {
-                    "type": "string",
-                    "description": "What information you need.",
-                }
-            },
-            "required": [],
-        },
-    },
-}
-
-ALL_TOOLS = [LOOKUP_HISTORY_TOOL, REQUEST_INFO_TOOL, SUBMIT_TRIAGE_TOOL]
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _action_to_str(fn_name: str, fn_args: dict) -> str:
-    """Compact single-line string for [STEP] action field."""
-    if fn_name == "lookup_history":
-        return "lookup_history()"
-    if fn_name == "request_info":
-        req = fn_args.get("info_request", "")
-        req = req[:60].replace(" ", "_") if req else ""
-        return f"request_info({req})"
-    parts = []
-    for key in ("priority", "department", "sentiment", "escalate"):
-        val = fn_args.get(key)
-        if val is not None:
-            parts.append(f"{key}={val}")
-    return "submit_triage(" + ",".join(parts) + ")"
-
-
-def _observation_to_messages(obs: Any) -> list[dict]:
+def _build_prompt(obs: Any) -> str:
     ticket = obs.ticket
-    context_str = ""
-    if obs.extra_context:
-        context_str = "\n\nAdditional context revealed:\n" + json.dumps(obs.extra_context, indent=2)
+    task_id = obs.task_id
 
-    history_str = ""
-    if obs.action_history:
-        history_str = f"\n\nSteps taken: {len(obs.action_history)}/{obs.max_steps}"
-
-    user_content = (
+    ticket_block = (
         f"=== SUPPORT TICKET ===\n"
-        f"ID: {ticket.ticket_id}\n"
         f"Subject: {ticket.subject}\n"
-        f"Body:\n{ticket.body}\n\n"
+        f"Body: {ticket.body}\n"
         f"Customer tier: {ticket.customer_tier}\n"
         f"Previous contacts (30d): {ticket.previous_contacts}\n"
         f"Account age: {ticket.account_age_days} days\n"
-        f"Attachments: {', '.join(ticket.attachments) or 'none'}"
-        f"{context_str}{history_str}"
     )
-    return [
-        {"role": "system", "content": obs.task_description},
-        {"role": "user", "content": user_content},
-    ]
+
+    if task_id == "task1":
+        schema = '{"priority": "urgent|high|medium|low"}'
+        instructions = (
+            "Classify the ticket urgency. "
+            "urgent=financial loss/security/outage, high=major issue no workaround, "
+            "medium=moderate issue workaround exists, low=minor/general."
+        )
+    elif task_id == "task2":
+        schema = '{"priority": "urgent|high|medium|low", "department": "billing|technical|account|returns|general"}'
+        instructions = (
+            "Classify priority AND route to department. "
+            "billing=payments/invoices, technical=bugs/API, account=login/subscription, "
+            "returns=refunds/replacements, general=how-to/feature requests."
+        )
+    else:  # task3
+        schema = (
+            '{"priority": "urgent|high|medium|low", '
+            '"department": "billing|technical|account|returns|general", '
+            '"sentiment": "angry|frustrated|neutral|satisfied", '
+            '"escalate": true|false, '
+            '"response_draft": "short professional reply to customer"}'
+        )
+        instructions = (
+            "Full triage: priority, department, sentiment, escalation decision, and a draft reply. "
+            "Escalate if: 3+ unresolved contacts, financial loss, security risk, cancellation threat, or production outage."
+        )
+
+    return (
+        f"{obs.task_description}\n\n"
+        f"{ticket_block}\n"
+        f"{instructions}\n\n"
+        f"Respond with ONLY valid JSON matching this schema:\n{schema}"
+    )
+
+
+def _parse_response(text: str, task_id: str) -> Action:
+    """Extract JSON from model response and map to Action."""
+    data: dict = {}
+    try:
+        match = re.search(r"\{.*?\}", text, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    escalate = data.get("escalate")
+    if isinstance(escalate, str):
+        escalate = escalate.lower() == "true"
+
+    return Action(
+        action_type="submit_triage",
+        priority=data.get("priority"),
+        department=data.get("department"),
+        sentiment=data.get("sentiment"),
+        escalate=bool(escalate) if escalate is not None else None,
+        response_draft=data.get("response_draft"),
+    )
+
+
+def _action_to_str(action: Action) -> str:
+    parts = []
+    for key in ("priority", "department", "sentiment", "escalate"):
+        val = getattr(action, key, None)
+        if val is not None:
+            parts.append(f"{key}={val}")
+    return "submit_triage(" + ",".join(parts) + ")"
 
 
 # ── Episode runner ────────────────────────────────────────────────────────────
@@ -185,99 +150,43 @@ def run_episode(client: OpenAI, env: CustomerSupportEnv, task_name: str) -> dict
     steps_taken = 0
     score = 0.0
     success = False
-    msg = None
 
     log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        messages = _observation_to_messages(obs)
-        max_steps = env.task_config.max_steps
+        prompt = _build_prompt(obs)
+        error_msg: Optional[str] = None
+        action_str = "submit_triage()"
+        action = Action(action_type="submit_triage")
 
-        for step in range(1, max_steps + 1):
-            error_msg: Optional[str] = None
-            action: Optional[Action] = None
-            action_str = "no_op()"
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=400,
+                temperature=0.1,
+            )
+            text = (response.choices[0].message.content or "").strip()
+            action = _parse_response(text, obs.task_id)
+            action_str = _action_to_str(action)
+        except Exception as exc:
+            error_msg = str(exc)[:120]
 
-            try:
-                response = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=messages,
-                    tools=ALL_TOOLS,
-                    tool_choice="auto",
-                )
-                msg = response.choices[0].message
+        obs, reward, done, info = env.step(action)
+        rewards.append(reward.score)
+        steps_taken = 1
+        score = reward.score
 
-                if not msg.tool_calls:
-                    action = Action(action_type="submit_triage")
-                    action_str = "submit_triage()"
-                else:
-                    tool_call = msg.tool_calls[0]
-                    fn_name = tool_call.function.name
-                    try:
-                        fn_args = json.loads(tool_call.function.arguments)
-                    except json.JSONDecodeError:
-                        fn_args = {}
-
-                    action_str = _action_to_str(fn_name, fn_args)
-
-                    if fn_name == "lookup_history":
-                        action = Action(action_type="lookup_history")
-                    elif fn_name == "request_info":
-                        action = Action(
-                            action_type="request_info",
-                            info_request=fn_args.get("info_request"),
-                        )
-                    else:
-                        action = Action(
-                            action_type="submit_triage",
-                            priority=fn_args.get("priority"),
-                            department=fn_args.get("department"),
-                            sentiment=fn_args.get("sentiment"),
-                            escalate=fn_args.get("escalate"),
-                            response_draft=fn_args.get("response_draft"),
-                            reasoning=fn_args.get("reasoning"),
-                        )
-
-            except Exception as exc:
-                error_msg = str(exc)[:120]
-                action = Action(action_type="submit_triage")
-                action_str = "submit_triage()"
-
-            obs, reward, done, info = env.step(action)
-            rewards.append(reward.score)
-            steps_taken = step
-
-            log_step(step=step, action=action_str, reward=reward.score, done=done, error=error_msg)
-
-            if done:
-                score = reward.score
-                break
-
-            if action.action_type != "submit_triage" and msg and msg.tool_calls:
-                tool_call = msg.tool_calls[0]
-                messages = messages + [
-                    msg.model_dump(exclude_unset=True),
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps(
-                            {"result": reward.feedback, "extra_context": obs.extra_context}
-                        ),
-                    },
-                ]
-                messages = _observation_to_messages(obs) + messages[-2:]
+        log_step(step=1, action=action_str, reward=reward.score, done=done, error=error_msg)
 
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     finally:
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
-    return {
-        "task": task_name,
-        "steps": steps_taken,
-        "score": score,
-        "success": success,
-    }
+    return {"task": task_name, "steps": steps_taken, "score": score, "success": success}
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -300,9 +209,7 @@ def main() -> None:
         for ep in range(1, EPISODES_PER_TASK + 1):
             run_episode(client, env, task_name)
 
-    print("[INFO] Inference complete. Keeping container alive.", flush=True)
-    while True:
-        time.sleep(3600)
+    print("[INFO] Inference complete.", flush=True)
 
 
 if __name__ == "__main__":
