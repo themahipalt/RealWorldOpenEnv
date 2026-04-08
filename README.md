@@ -130,15 +130,15 @@ curl -X POST https://mahithakur-customer-support-triage.hf.space/step \
 
 ```bash
 pip install -r requirements.txt
-export OPENAI_API_KEY=sk-...
-python baseline.py --model gpt-4o-mini --episodes 5
+export HF_TOKEN=hf_...
+python baseline.py --model Qwen/Qwen2.5-7B-Instruct --episodes 5
 ```
 
 ### Docker
 
 ```bash
 docker build -t cst-env .
-docker run -e OPENAI_API_KEY=$OPENAI_API_KEY cst-env
+docker run -e HF_TOKEN=$HF_TOKEN cst-env
 ```
 
 ### Programmatic usage
@@ -166,15 +166,15 @@ print(reward.score, reward.feedback)
 
 ---
 
-## Baseline Scores (gpt-4o-mini, 5 episodes, seed=42)
+## Baseline Scores (Qwen/Qwen2.5-7B-Instruct via HuggingFace Inference API, seed=42)
 
 | Task | Mean Score | Pass Rate |
 |------|-----------|-----------|
-| task1 (easy) | ~0.85 | ~100% |
+| task1 (easy) | ~0.99 | ~100% |
 | task2 (medium) | ~0.70 | ~80% |
 | task3 (hard) | ~0.55 | ~60% |
 
-*Run `python baseline.py` to reproduce.*
+*Uses HuggingFace Inference API with `Qwen/Qwen2.5-7B-Instruct`. Run `python baseline.py` to reproduce.*
 
 ---
 
