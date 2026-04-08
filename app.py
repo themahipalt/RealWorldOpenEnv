@@ -57,6 +57,7 @@ def health():
     return {"status": "ok", "environment": "customer-support-triage", "version": "1.0.0"}
 
 
+
 from fastapi import Body
 from typing import Optional
 
@@ -76,8 +77,6 @@ def reset(req: Optional[ResetRequest] = Body(default=None)):
         "done": False,
         "info": {}
     }
-
-
 
 
 @app.post("/step")
