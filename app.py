@@ -57,20 +57,13 @@ def health():
     return {"status": "ok", "environment": "customer-support-triage", "version": "1.0.0"}
 
 
-
-from fastapi import Body
-from typing import Optional
-
 @app.post("/reset")
 def reset(req: Optional[ResetRequest] = Body(default=None)):
     if req is None:
         req = ResetRequest()
-
     env = CustomerSupportEnv(task_id=req.task_id, seed=req.seed)
     _envs[req.task_id] = env
-
     obs = env.reset()
-
     return {
         "observation": obs.model_dump(),
         "reward": 0,
@@ -142,4 +135,3 @@ def startup_event():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=7860)
-# fix
